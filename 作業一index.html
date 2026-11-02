@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>猜數字 1～100｜版本一（教師示範）</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --text:#1f2933; --muted:#616e7c; --accent:#2563eb; --ok:#15803d; --bad:#b91c1c; --line:#d9dee5; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#14181d; --card:#1e242b; --text:#e6eaef; --muted:#9aa5b1; --accent:#60a5fa; --ok:#4ade80; --bad:#f87171; --line:#323b45; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:24px 16px; background:var(--bg); color:var(--text); font-family:system-ui,"Noto Sans TC","Microsoft JhengHei",sans-serif; }
+  main { max-width:420px; margin:0 auto; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:24px; }
+  h1 { font-size:1.3rem; margin:0 0 4px; }
+  .sub { color:var(--muted); font-size:.9rem; margin:0 0 20px; }
+  .row { display:flex; gap:8px; }
+  input { flex:1; min-width:0; font-size:1.1rem; padding:10px 12px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--text); }
+  button { font-size:1rem; padding:10px 16px; border:0; border-radius:8px; background:var(--accent); color:#fff; cursor:pointer; }
+  button.secondary { background:transparent; color:var(--accent); border:1px solid var(--accent); }
+  button:disabled, input:disabled { opacity:.5; cursor:not-allowed; }
+  #message { min-height:2.4em; margin:16px 0 8px; font-weight:600; }
+  #message.ok { color:var(--ok); } #message.bad { color:var(--bad); }
+  #count { color:var(--muted); margin:0 0 16px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>猜數字 1～100</h1>
+  <p class="sub">電腦想了一個 1 到 100 的整數，請猜猜看。</p>
+  <div class="row">
+    <input id="guess" type="text" inputmode="numeric" autocomplete="off" placeholder="輸入 1～100" aria-label="輸入你的猜測">
+    <button id="submit" type="button">送出</button>
+  </div>
+  <div id="message" role="status" aria-live="polite"></div>
+  <p id="count">目前已猜 0 次</p>
+  <button id="restart" class="secondary" type="button">重新開始</button>
+</main>
+
+<script>
+// ===== 遊戲規則（純函式，方便測試）=====
+function newAnswer() { return Math.floor(Math.random() * 100) + 1; }
+
+// 回傳 { valid, value, error }
+function parseGuess(text) {
+  var s = String(text).trim();
+  if (s === "") return { valid:false, error:"請先輸入一個數字。" };
+  if (!/^\d+$/.test(s)) return { valid:false, error:"只能輸入整數數字。" };
+  var n = Number(s);
+  if (n < 1 || n > 100) return { valid:false, error:"請輸入 1 到 100 之間的數字。" };
+  return { valid:true, value:n };
+}
+
+// 回傳 "low"（猜太小）、"high"（猜太大）或 "correct"
+function judge(guess, answer) {
+  if (guess === answer) return "correct";
+  return guess < answer ? "low" : "high";
+}
+// ===== 規則結束 =====
+
+(function () {
+  var answer = newAnswer();
+  var count = 0;
+  var finished = false;
+  var $input = document.getElementById("guess");
+  var $submit = document.getElementById("submit");
+  var $msg = document.getElementById("message");
+  var $count = document.getElementById("count");
+
+  function show(text, cls) { $msg.textContent = text; $msg.className = cls || ""; }
+
+  function submit() {
+    if (finished) return;
+    var r = parseGuess($input.value);
+    if (!r.valid) { show(r.error, "bad"); return; }   // 無效輸入不計次數
+    count++;
+    $count.textContent = "目前已猜 " + count + " 次";
+    var result = judge(r.value, answer);
+    if (result === "correct") {
+      show("猜中了！答案是 " + answer + "，共猜 " + count + " 次。", "ok");
+      finished = true; $input.disabled = true; $submit.disabled = true;
+    } else {
+      show(result === "low" ? r.value + " 太小了，再大一點。" : r.value + " 太大了，再小一點。");
+    }
+    $input.select();
+  }
+
+  function restart() {
+    answer = newAnswer(); count = 0; finished = false;
+    $input.disabled = false; $submit.disabled = false; $input.value = "";
+    $count.textContent = "目前已猜 0 次"; show("");
+    $input.focus();
+  }
+
+  $submit.addEventListener("click", submit);
+  $input.addEventListener("keydown", function (e) { if (e.key === "Enter") submit(); });
+  document.getElementById("restart").addEventListener("click", restart);
+})();
+</script>
+</body>
+</html>

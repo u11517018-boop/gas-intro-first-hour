@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>猜數字 1～100｜版本二（教師示範：多局歷史）</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --text:#1f2933; --muted:#616e7c; --accent:#2563eb; --ok:#15803d; --bad:#b91c1c; --warn:#b45309; --line:#d9dee5; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#14181d; --card:#1e242b; --text:#e6eaef; --muted:#9aa5b1; --accent:#60a5fa; --ok:#4ade80; --bad:#f87171; --warn:#fbbf24; --line:#323b45; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:24px 16px; background:var(--bg); color:var(--text); font-family:system-ui,"Noto Sans TC","Microsoft JhengHei",sans-serif; }
+  main { max-width:520px; margin:0 auto; display:grid; gap:16px; }
+  section { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px; }
+  h1 { font-size:1.3rem; margin:0 0 4px; } h2 { font-size:1.05rem; margin:0 0 12px; }
+  .sub { color:var(--muted); font-size:.9rem; margin:0 0 16px; }
+  .row { display:flex; gap:8px; }
+  input { flex:1; min-width:0; font-size:1.1rem; padding:10px 12px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--text); }
+  button { font-size:1rem; padding:10px 16px; border:0; border-radius:8px; background:var(--accent); color:#fff; cursor:pointer; }
+  button.secondary { background:transparent; color:var(--accent); border:1px solid var(--accent); }
+  button:disabled, input:disabled { opacity:.5; cursor:not-allowed; }
+  #message { min-height:2.4em; margin:14px 0 6px; font-weight:600; }
+  #message.ok { color:var(--ok); } #message.bad { color:var(--bad); }
+  #count { color:var(--muted); margin:0 0 14px; }
+  details { border:1px solid var(--line); border-radius:8px; padding:8px 12px; margin-bottom:8px; }
+  summary { cursor:pointer; font-weight:600; }
+  .tag { font-size:.8rem; padding:2px 8px; border-radius:999px; border:1px solid currentColor; margin-left:6px; font-weight:500; }
+  .tag.done { color:var(--ok); } .tag.undone { color:var(--warn); } .tag.live { color:var(--accent); }
+  table { width:100%; border-collapse:collapse; margin-top:8px; font-size:.92rem; }
+  th, td { text-align:left; padding:4px 6px; border-bottom:1px solid var(--line); }
+  .empty { color:var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <section>
+    <h1>猜數字 1～100</h1>
+    <p class="sub">版本二：可開新局、查看每一局的猜測歷史。重新整理頁面後資料會清空。</p>
+    <div id="gameTitle" style="font-weight:600;margin-bottom:10px"></div>
+    <div class="row">
+      <input id="guess" type="text" inputmode="numeric" autocomplete="off" placeholder="輸入 1～100" aria-label="輸入你的猜測">
+      <button id="submit" type="button">送出</button>
+    </div>
+    <div id="message" role="status" aria-live="polite"></div>
+    <p id="count"></p>
+    <button id="newGame" class="secondary" type="button">開新局</button>
+  </section>
+  <section>
+    <h2>歷史紀錄</h2>
+    <div id="history"></div>
+  </section>
+</main>
+
+<script>
+// ===== 遊戲規則與狀態（純函式，方便測試）=====
+var STATUS_LIVE = "進行中", STATUS_DONE = "已完成", STATUS_UNDONE = "未完成";
+
+function newAnswer() { return Math.floor(Math.random() * 100) + 1; }
+
+function parseGuess(text) {
+  var s = String(text).trim();
+  if (s === "") return { valid:false, error:"請先輸入一個數字。" };
+  if (!/^\d+$/.test(s)) return { valid:false, error:"只能輸入整數數字。" };
+  var n = Number(s);
+  if (n < 1 || n > 100) return { valid:false, error:"請輸入 1 到 100 之間的數字。" };
+  return { valid:true, value:n };
+}
+
+function judge(guess, answer) {
+  if (guess === answer) return "correct";
+  return guess < answer ? "low" : "high";
+}
+
+function createState() { return { games: [] }; }
+
+function currentGame(state) {
+  return state.games.length ? state.games[state.games.length - 1] : null;
+}
+
+// 開新局：若目前這一局還在進行中，標示為「未完成」
+function startGame(state, answer) {
+  var cur = currentGame(state);
+  if (cur && cur.status === STATUS_LIVE) cur.status = STATUS_UNDONE;
+  var g = { id: state.games.length + 1, answer: answer, status: STATUS_LIVE, guesses: [] };
+  state.games.push(g);
+  return g;
+}
+
+// 送出猜測：只有目前這一局、且進行中才接受；無效輸入不記錄
+function submitGuess(state, text, timeText) {
+  var g = currentGame(state);
+  if (!g || g.status !== STATUS_LIVE) return { ok:false, error:"本局已結束，請開新局。" };
+  var p = parseGuess(text);
+  if (!p.valid) return { ok:false, error:p.error };
+  var result = judge(p.value, g.answer);
+  g.guesses.push({ order: g.guesses.length + 1, value: p.value, result: result, time: timeText });
+  if (result === "correct") g.status = STATUS_DONE;
+  return { ok:true, result:result, value:p.value, game:g };
+}
+// ===== 規則結束 =====
+
+(function () {
+  var state = createState();
+  var $input = document.getElementById("guess");
+  var $submit = document.getElementById("submit");
+  var $msg = document.getElementById("message");
+  var $count = document.getElementById("count");
+  var $title = document.getElementById("gameTitle");
+  var $history = document.getElementById("history");
+  var LABEL = { low:"太小", high:"太大", correct:"猜中" };
+
+  function show(text, cls) { $msg.textContent = text; $msg.className = cls || ""; }
+  function now() { return new Date().toLocaleTimeString("zh-TW", { hour12:false }); }
+  function el(tag, text, cls) { var e = document.createElement(tag); if (text != null) e.textContent = text; if (cls) e.className = cls; return e; }
+
+  function render() {
+    var g = currentGame(state);
+    var live = g && g.status === STATUS_LIVE;
+    $title.textContent = "第 " + g.id + " 局（" + g.status + "）";
+    $count.textContent = "本局已猜 " + g.guesses.length + " 次";
+    $input.disabled = !live; $submit.disabled = !live;
+
+    $history.textContent = "";
+    state.games.slice().reverse().forEach(function (game) {
+      var d = el("details");
+      if (game === g) d.open = true;
+      var s = el("summary", "第 " + game.id + " 局　猜 " + game.guesses.length + " 次");
+      var cls = game.status === STATUS_DONE ? "done" : game.status === STATUS_UNDONE ? "undone" : "live";
+      s.appendChild(el("span", game.status, "tag " + cls));
+      d.appendChild(s);
+      if (game.status === STATUS_DONE) d.appendChild(el("div", "答案：" + game.answer, "sub"));
+      if (!game.guesses.length) {
+        d.appendChild(el("div", "（本局尚無有效猜測）", "empty"));
+      } else {
+        var t = el("table"), head = el("tr");
+        ["次序", "輸入", "結果", "時間"].forEach(function (h) { head.appendChild(el("th", h)); });
+        t.appendChild(head);
+        game.guesses.forEach(function (x) {
+          var r = el("tr");
+          [x.order, x.value, LABEL[x.result], x.time].forEach(function (c) { r.appendChild(el("td", c)); });
+          t.appendChild(r);
+        });
+        d.appendChild(t);
+      }
+      $history.appendChild(d);
+    });
+  }
+
+  function submit() {
+    var r = submitGuess(state, $input.value, now());
+    if (!r.ok) { show(r.error, "bad"); return; }
+    if (r.result === "correct") show("猜中了！答案是 " + r.value + "，本局共猜 " + r.game.guesses.length + " 次。", "ok");
+    else show(r.value + (r.result === "low" ? " 太小了，再大一點。" : " 太大了，再小一點。"));
+    render(); $input.select();
+  }
+
+  function newGame() {
+    startGame(state, newAnswer());
+    $input.value = ""; show("已開始新局。"); render(); $input.focus();
+  }
+
+  $submit.addEventListener("click", submit);
+  $input.addEventListener("keydown", function (e) { if (e.key === "Enter") submit(); });
+  document.getElementById("newGame").addEventListener("click", newGame);
+  startGame(state, newAnswer()); render();
+})();
+</script>
+</body>
+</html>
